@@ -44,9 +44,9 @@ class NftMarketplace(arc4.ARC4Contract):
 
     def __init__(self) -> None:
         "문제 1 시작"
-        self.asset_id = "여기에 코드 작성"
-        self.unitary_price = "여기에 코드 작성"
-        self.bootstrapped = "여기에 코드 작성"
+        self.asset_id = UInt64(0)
+        self.unitary_price = UInt64(0)
+        self.bootstrapped = False
         "문제 1 끝"
 
     """
@@ -91,7 +91,34 @@ class NftMarketplace(arc4.ARC4Contract):
     def bootstrap(
         self, asset: Asset, unitary_price: UInt64, mbr_pay: gtxn.PaymentTransaction
     ) -> None:
-        "여기에 코드 작성"
+        # 호출자가 앱의 생성자인지 체크
+        assert Txn.sender == Global.creator_address
+
+        # bootstrapped 글로벌 상태가 False인지 체크
+        assert self.bootstrapped == False
+
+        # mbr_pay 트랜잭션을 받는 계정이 앱 계정인지 체크
+        assert mbr_pay.receiver == Global.current_application_address
+        
+        # mbr_pay의 알고 송금량(amount)이 앱 계정의 미니멈 밸런스(0.1 알고)와 판매할 ASA에 옵트인하기 위한 미니멈 밸런스(0.1 알고)의 합과 같은지 체크
+        assert mbr_pay.amount == Global.min_balance + Global.asset_opt_in_min_balance
+        
+        # asset_id 글로벌 상태를 인수로 들어온 판매할 ASA 아이디로 업데이트
+        self.asset_id = asset.id
+        
+        # unitary_price 글로벌 상태를 인수로 들어온 판매할 ASA의 단가로 업데이트
+        self.unitary_price = unitary_price
+        
+        # bootstrapped 글로벌 상태를 True로 변경
+        self.bootstrapped = True
+        
+        # 앱이 판매할 ASA를 보유할 수 있도록 앱 계정으로 판매할 ASA에 옵트인
+        itxn.AssetTransfer(
+            xfer_asset=asset,
+            asset_receiver=Global.current_application_address,
+            asset_amount=0,
+        ).submit()
+        
 
     "문제 2 끝"
 
@@ -131,7 +158,25 @@ class NftMarketplace(arc4.ARC4Contract):
         buyer_txn: gtxn.PaymentTransaction,
         quantity: UInt64,
     ) -> None:
-        "여기에 코드 작성"
+        
+        # bootstrapped 글로벌 상태가 True인지 체크
+        assert self.bootstrapped == True
+        
+        # buyer_txn의 sender가 Txn.sender와 같은지 체크
+        assert buyer_txn.sender == Txn.sender
+        
+        # buyer_txn의 receiver가 앱 계정 주소와 같은지 체크
+        assert buyer_txn.receiver == Global.current_application_address
+        
+        # buyer_txn의 amount가 unitary_price(단가) 곱하기 quantity(수량)과 같은지 체크
+        assert buyer_txn.amount == self.unitary_price * quantity
+        
+        # 구매자에게 에셋(ASA)을 전송
+        itxn.AssetTransfer(
+            xfer_asset=self.asset_id,
+            asset_receiver=buyer_txn.sender,
+            asset_amount=quantity,
+        ).submit()
 
     "문제 3 끝"
 
@@ -181,6 +226,21 @@ class NftMarketplace(arc4.ARC4Contract):
 
     @arc4.abimethod(allow_actions=["DeleteApplication"])
     def withdraw_and_delete(self) -> None:
-        "여기에 코드 작성"
-
+        
+        # 메서드 호출자(Txn.sender)가 앱의 생성자(Global.creator_address)인지 체크
+        assert Txn.sender == Global.creator_address
+        
+        # 앱 계정에 있는 에셋(ASA)을 앱 계정으로 전송
+        itxn.AssetTransfer(
+            xfer_asset=self.asset_id,
+            asset_receiver=Global.creator_address,
+            asset_close_to=Global.creator_address,
+        ).submit()
+        
+        # 앱 계정에 있는 모든 수익금을 앱 생성자(판매자) 계정으로 송금
+        itxn.Payment(
+            receiver=Global.creator_address,
+            close_remainder_to=Global.creator_address,
+        ).submit()
+        
     "문제 4 끝"
