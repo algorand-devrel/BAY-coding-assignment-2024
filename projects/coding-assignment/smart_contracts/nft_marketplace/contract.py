@@ -44,9 +44,9 @@ class NftMarketplace(arc4.ARC4Contract):
 
     def __init__(self) -> None:
         "문제 1 시작"
-        self.asset_id = "여기에 코드 작성"
-        self.unitary_price = "여기에 코드 작성"
-        self.bootstrapped = "여기에 코드 작성"
+        self.asset_id = UInt64(0)
+        self.unitary_price = UInt64(0)
+        self.bootstrapped = False
         "문제 1 끝"
 
     """
@@ -63,7 +63,7 @@ class NftMarketplace(arc4.ARC4Contract):
 
     # 1단계: assert로 bootstrap 호출 조건을 체크하세요.
     - 메서드 호출자 (Txn.sender)가 앱의 생성자(Global.creator_address)인지 체크하세요.
-    - bootstrapped 글ㄹ로벌 상태가 False인지 체크하세요.
+    - bootstrapped 글로벌 상태가 False인지 체크하세요.
     - mbr_pay 트랜잭션을 받는 계정이 앱 계정인지 체크하세요.
     - mbr_pay의 알고 송금량(amount)이 앱 계정의 미니멈 밸런스(0.1 알고)와 판매할 ASA에 옵트인하기
        위한 미니멈 밸런스(0.1 알고)의 합과 같은지 체크해야합니다.
@@ -91,6 +91,19 @@ class NftMarketplace(arc4.ARC4Contract):
     def bootstrap(
         self, asset: Asset, unitary_price: UInt64, mbr_pay: gtxn.PaymentTransaction
     ) -> None:
+        assert Txn.sender == Global.creator_address
+        assert self.bootstrapped == False
+        assert mbr_pay.receiver == Global.current_application_address
+        assert mbr_pay.amount == Global.min_balance + Global.asset_opt_in_min_balance
+        self.asset_id = asset.id
+        self.unitary_price = unitary_price
+        self.bootstrapped = True
+        itxn.AssetTransfer(
+            xfer_asset = asset,
+            asset_amount = 0,
+            asset_receiver = Global.current_application_address,
+        ).submit()
+
         "여기에 코드 작성"
 
     "문제 2 끝"
@@ -131,7 +144,15 @@ class NftMarketplace(arc4.ARC4Contract):
         buyer_txn: gtxn.PaymentTransaction,
         quantity: UInt64,
     ) -> None:
-        "여기에 코드 작성"
+         assert self.bootstrapped == True
+         assert buyer_txn.sender == Txn.sender
+         assert buyer_txn.receiver == Global.current_application_address
+         assert buyer_txn.amount == self.unitary_price * quantity
+         itxn.AssetTransfer(
+            xfer_asset = self.asset_id,
+            asset_amount = quantity,
+            asset_receiver = buyer_txn.sender,
+         ).submit()
 
     "문제 3 끝"
 
@@ -153,7 +174,7 @@ class NftMarketplace(arc4.ARC4Contract):
     - 메서드 호출자(Txn.sender)가 앱의 생성자(Global.creator_address)인지 체크해야합니다.
 
     # 2단계: withdraw_and_delete 메서드는 아래 기능들을 수행합니다.
-    1. 앱 계정에 있는 에셋(ASA)을 앱 계정으로 전송합니다. (AssetTransfer Transaction)
+    1. 앱 계정에 있는 에셋(ASA)을 판매자 계정으로 전송합니다. (AssetTransfer Transaction)
        이때 asset_close_to 패러미터를 앱 생성자(판매자)로 설정하여
        앱 계정에 남아있는 에섯 전부를 앱 생성자(판매자)에게 보냅니다.
        에셋의 수량과 무관하게 전 수량 송금되기 때문에 에셋 수량(asset_amount)은 설정하지 않으셔도 됩니다.
@@ -182,5 +203,16 @@ class NftMarketplace(arc4.ARC4Contract):
     @arc4.abimethod(allow_actions=["DeleteApplication"])
     def withdraw_and_delete(self) -> None:
         "여기에 코드 작성"
+        assert self.bootstrapped == True
+        assert Txn.sender == Global.creator_address
+        itxn.AssetTransfer(
+            xfer_asset= self.asset_id,
+            asset_receiver = Global.creator_address,
+            asset_close_to = Global.creator_address
+        ).submit()
+        itxn.Payment(
+            receiver= Global.creator_address,
+            close_remainder_to= Global.creator_address,
+        ).submit()
 
     "문제 4 끝"
