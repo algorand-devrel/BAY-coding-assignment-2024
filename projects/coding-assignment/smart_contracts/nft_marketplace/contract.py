@@ -27,7 +27,7 @@ class NftMarketplace(arc4.ARC4Contract):
     2. unitary_price: 판매할 에셋(ASA)의 가격. UInt64타입을 가진 글로벌 상태(Global State) 초기값은 0으로 설정해주세요.
     3. bootstrapped: 앱에서 에셋을 판매할 준비가 되었는지 체크하는 bool 타입의 글로벌 상태(Global State). 초기값은 False로 설정해주세요.
        bootstrap 메서드가 실행되면 True로 변경됩니다.
-
+       
     재밌는 팩트!
     AVM은 Bytes 타입과 UInt64 타입만 지원합니다. 그래서 다른 타입을 사용하고 싶으면 보통 arc4타입을 사용합니다. 하지만
     Algorand Python에서는 bool, string 타입은 파이썬 코드와 동일하게 사용할 수 있습니다. 예를 들어 bool 타입은 True,
@@ -44,9 +44,9 @@ class NftMarketplace(arc4.ARC4Contract):
 
     def __init__(self) -> None:
         "문제 1 시작"
-        self.asset_id = "여기에 코드 작성"
-        self.unitary_price = "여기에 코드 작성"
-        self.bootstrapped = "여기에 코드 작성"
+        self.asset_id = UInt64(0)
+        self.unitary_price = UInt64(0)
+        self.bootstrapped = bool(False)
         "문제 1 끝"
 
     """
@@ -91,6 +91,23 @@ class NftMarketplace(arc4.ARC4Contract):
     def bootstrap(
         self, asset: Asset, unitary_price: UInt64, mbr_pay: gtxn.PaymentTransaction
     ) -> None:
+        
+        assert Txn.sender == Global.creator_address, "Only creator can bootstrap"
+        assert self.bootstrapped == False, "Already bootstrapped"
+        assert mbr_pay.receiver == Global.current_application_address, "Payment receiver must be the contract address"
+        assert mbr_pay.amount == Global.min_balance + Global.asset_opt_in_min_balance, "Payment amount must be equal to the sum of the minimum balance and the minimum balance to opt in to the ASA"
+        
+        self.asset_id = asset.id
+        self.unitary_price = unitary_price
+        self.bootstrapped = True
+        
+        itxn.AssetTransfer(
+            xfer_asset=self.asset_id,
+            asset_receiver=Global.current_application_address,
+            asset_amount=0,
+        ).submit()
+        
+        
         "여기에 코드 작성"
 
     "문제 2 끝"
@@ -131,8 +148,17 @@ class NftMarketplace(arc4.ARC4Contract):
         buyer_txn: gtxn.PaymentTransaction,
         quantity: UInt64,
     ) -> None:
-        "여기에 코드 작성"
-
+        assert self.bootstrapped == True, "Not bootstrapped"
+        assert buyer_txn.sender == Txn.sender, "Sender must be the caller"
+        assert buyer_txn.receiver == Global.current_application_address, "Receiver must be the contract address"
+        assert buyer_txn.amount == self.unitary_price * quantity, "Amount must be equal to the unitary price times the quantity"
+        
+        
+        itxn.AssetTransfer(
+            xfer_asset=self.asset_id,
+            asset_receiver=buyer_txn.sender,
+            asset_amount=quantity,
+        ).submit()
     "문제 3 끝"
 
     """
@@ -181,6 +207,21 @@ class NftMarketplace(arc4.ARC4Contract):
 
     @arc4.abimethod(allow_actions=["DeleteApplication"])
     def withdraw_and_delete(self) -> None:
+        assert Txn.sender == Global.creator_address, "Only creator can withdraw and delete"
+        
+        "// 에셋(ASA)을 앱 계정으로 전송"
+        itxn.AssetTransfer(
+            xfer_asset=self.asset_id,
+            asset_receiver=Global.creator_address,
+            asset_close_to=Global.creator_address,
+        ).submit()
+        
+        "// 모든 수익금을 판매자 계정으로 송금"
+        itxn.Payment(
+            receiver=Global.creator_address,
+            close_remainder_to=Global.creator_address,
+        ).submit()
+        
         "여기에 코드 작성"
 
     "문제 4 끝"
